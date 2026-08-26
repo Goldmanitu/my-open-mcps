@@ -1,0 +1,20 @@
+{
+  "name": "goldmanitu-my-open-mcps",
+  "interface": {
+    "displayName": "My Open MCPs"
+  },
+  "plugins": [
+    {
+      "name": "telegram-alert-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/telegram-alert-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

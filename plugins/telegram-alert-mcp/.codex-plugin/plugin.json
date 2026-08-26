@@ -1,0 +1,41 @@
+{
+  "name": "telegram-alert-mcp",
+  "version": "0.2.0",
+  "description": "Send deduplicated workflow alerts to one preconfigured Telegram chat.",
+  "author": {
+    "name": "Goldmanitu",
+    "url": "https://github.com/Goldmanitu"
+  },
+  "homepage": "https://github.com/Goldmanitu/my-open-mcps/tree/main/plugins/telegram-alert-mcp",
+  "repository": "https://github.com/Goldmanitu/my-open-mcps",
+  "license": "MIT",
+  "keywords": [
+    "telegram",
+    "alerts",
+    "automation",
+    "mcp",
+    "education"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Telegram Alerts",
+    "shortDescription": "Send safe, deduplicated Telegram workflow alerts.",
+    "longDescription": "An educational Codex plugin that demonstrates Schedule → Mail → AI rule → Telegram. It exposes one external-write MCP tool and a workflow skill with duplicate suppression.",
+    "developerName": "Goldmanitu",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Automation",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/Goldmanitu/my-open-mcps/tree/main/plugins/telegram-alert-mcp",
+    "privacyPolicyURL": "https://github.com/Goldmanitu/my-open-mcps/blob/main/plugins/telegram-alert-mcp/PRIVACY.md",
+    "defaultPrompt": [
+      "Explain how this Telegram alert workflow works.",
+      "Prepare a safe test alert for my Telegram bot.",
+      "Design a daily mail-to-Telegram monitoring workflow."
+    ],
+    "brandColor": "#229ED9"
+  },
+  "mcpServers": "./.mcp.json"
+}

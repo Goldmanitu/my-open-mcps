@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "telegram_alert": {
+      "command": "python3",
+      "args": [
+        "./scripts/run_plugin_mcp.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "HOME",
+        "PATH",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_CHAT_ID",
+        "TELEGRAM_ALERT_STATE_PATH",
+        "TELEGRAM_ALERT_TIMEOUT_SECONDS",
+        "TELEGRAM_ALERT_PROTECT_CONTENT",
+        "TELEGRAM_ALERT_MCP_PYTHON"
+      ],
+      "startup_timeout_sec": 15,
+      "tool_timeout_sec": 30
+    }
+  }
+}
