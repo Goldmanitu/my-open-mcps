@@ -19,5 +19,8 @@ test = ["pytest>=8"]
 [project.scripts]
 telegram-alert-mcp = "telegram_alert_mcp.server:main"
 
+[tool.setuptools]
+packages = ["telegram_alert_mcp"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
