@@ -1,6 +1,6 @@
 # My Open MCPs
 
-Открытый учебный marketplace плагинов для Codex.
+Открытый marketplace плагинов для Codex.
 
 ## Доступные плагины
 

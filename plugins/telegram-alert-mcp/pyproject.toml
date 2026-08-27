@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "telegram-alert-mcp"
 version = "0.2.0"
-description = "Educational Codex plugin and MCP server for deduplicated Telegram alerts"
+description = "Codex plugin and MCP server for safe, deduplicated Telegram alerts"
 requires-python = ">=3.11"
 dependencies = ["mcp>=1.27,<2.0"]
 
