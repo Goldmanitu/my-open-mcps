@@ -49,9 +49,9 @@ yandex:<folder>:<UID>:suspension-v1
 Never use the current date, a random UUID, or the schedule run ID as `event_id`.
 Those values change on every cycle and defeat duplicate suppression.
 
-## Educational explanation
+## Workflow model
 
-When teaching the architecture, keep the components separate:
+Keep the components separate:
 
 ```text
 Schedule → Mail MCP → agent/skill decision → Telegram MCP → Telegram Bot API
@@ -63,5 +63,5 @@ Schedule → Mail MCP → agent/skill decision → Telegram MCP → Telegram Bot
 - Telegram MCP exposes the `send_alert` action.
 - Telegram Bot API delivers the message.
 
-For a first demonstration, use a synthetic email and a clearly labeled test alert.
-Do not begin with real confidential correspondence.
+Before enabling a recurring workflow, test it with a message that contains no
+confidential information.

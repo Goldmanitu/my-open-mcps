@@ -1,6 +1,6 @@
 {
   "name": "telegram-alert-mcp",
-  "version": "0.2.0",
+  "version": "0.2.0+codex.20260827071414",
   "description": "Send deduplicated workflow alerts to one preconfigured Telegram chat.",
   "author": {
     "name": "Goldmanitu",
@@ -14,13 +14,13 @@
     "alerts",
     "automation",
     "mcp",
-    "education"
+    "notifications"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Telegram Alerts",
     "shortDescription": "Send safe, deduplicated Telegram workflow alerts.",
-    "longDescription": "An educational Codex plugin that demonstrates Schedule → Mail → AI rule → Telegram. It exposes one external-write MCP tool and a workflow skill with duplicate suppression.",
+    "longDescription": "Send safe, deduplicated Telegram alerts to one preconfigured chat. It exposes one external-write MCP tool and a workflow skill for recurring automations.",
     "developerName": "Goldmanitu",
     "category": "Productivity",
     "capabilities": [
