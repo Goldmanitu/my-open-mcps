@@ -1,6 +1,6 @@
 {
   "name": "telegram-alert-mcp",
-  "version": "0.2.1+codex.20260902095058",
+  "version": "0.2.1+codex.20260902065310",
   "description": "Send deduplicated workflow alerts to one preconfigured Telegram chat.",
   "author": {
     "name": "Goldmanitu",
