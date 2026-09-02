@@ -1,5 +1,6 @@
 import io
 import json
+import ssl
 import urllib.error
 from pathlib import Path
 
@@ -49,6 +50,22 @@ def test_client_posts_plain_text_to_fixed_chat(tmp_path):
         "link_preview_options": {"is_disabled": True},
     }
     assert "parse_mode" not in captured["payload"]
+
+
+def test_client_retries_certificate_error_with_macos_system_trust(monkeypatch, tmp_path):
+    calls = []
+    trusted_context = object()
+
+    def fake_urlopen(request, timeout, **kwargs):
+        calls.append(kwargs.get("context"))
+        if "context" not in kwargs:
+            raise urllib.error.URLError(ssl.SSLCertVerificationError(1, "untrusted"))
+        return FakeResponse({"ok": True, "result": {"message_id": 43}})
+
+    monkeypatch.setattr(server, "_macos_system_ssl_context", lambda: trusted_context)
+    client = server.TelegramBotClient(settings(tmp_path), urlopen=fake_urlopen)
+    assert client.send_message("Retry") == 43
+    assert calls == [None, trusted_context]
 
 
 def test_send_alert_suppresses_same_event_on_later_cycle(tmp_path):
