@@ -12,6 +12,9 @@ import json
 import os
 import re
 import sqlite3
+import ssl
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 from contextlib import closing
@@ -52,6 +55,40 @@ mcp = FastMCP(
 
 class TelegramAlertError(RuntimeError):
     """A safe error suitable for returning through MCP."""
+
+
+def _macos_system_ssl_context() -> ssl.SSLContext | None:
+    """Build a verified TLS context from macOS system trust stores.
+
+    Some managed macOS networks install a trusted inspection certificate in the
+    system keychain. Python distributions do not always consult that keychain,
+    even though macOS applications do. This fallback is used only after the
+    normal verified connection fails with a certificate-verification error.
+    """
+    if sys.platform != "darwin":
+        return None
+    certificate_stores = (
+        "/Library/Keychains/System.keychain",
+        "/System/Library/Keychains/SystemRootCertificates.keychain",
+    )
+    certificates: list[bytes] = []
+    try:
+        for store in certificate_stores:
+            result = subprocess.run(
+                ["security", "find-certificate", "-a", "-p", store],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+            if result.stdout:
+                certificates.append(result.stdout)
+        if not certificates:
+            return None
+        context = ssl.create_default_context()
+        context.load_verify_locations(cadata=b"".join(certificates).decode("ascii"))
+        return context
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError, ssl.SSLError):
+        return None
 
 
 def _parse_bool(value: str, field: str) -> bool:
@@ -277,15 +314,28 @@ class TelegramBotClient:
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "telegram-alert-mcp/0.2.0",
+                "User-Agent": "telegram-alert-mcp/0.2.1",
             },
             method="POST",
         )
         try:
-            with self.urlopen(request, timeout=self.settings.timeout_seconds) as response:
-                body = response.read(MAX_RESPONSE_BYTES + 1)
-                if len(body) > MAX_RESPONSE_BYTES:
-                    raise TelegramAlertError("Telegram returned an oversized response.")
+            try:
+                with self.urlopen(request, timeout=self.settings.timeout_seconds) as response:
+                    body = response.read(MAX_RESPONSE_BYTES + 1)
+            except urllib.error.URLError as exc:
+                if not isinstance(exc.reason, ssl.SSLCertVerificationError):
+                    raise
+                context = _macos_system_ssl_context()
+                if context is None:
+                    raise
+                with self.urlopen(
+                    request,
+                    timeout=self.settings.timeout_seconds,
+                    context=context,
+                ) as response:
+                    body = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise TelegramAlertError("Telegram returned an oversized response.")
         except urllib.error.HTTPError as exc:
             retry_after: int | None = None
             try:
