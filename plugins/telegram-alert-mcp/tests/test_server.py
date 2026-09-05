@@ -52,6 +52,34 @@ def test_client_posts_plain_text_to_fixed_chat(tmp_path):
     assert "parse_mode" not in captured["payload"]
 
 
+def test_discovery_returns_bot_and_chats_without_message_text(tmp_path):
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if request.full_url.endswith("/getMe"):
+            return FakeResponse({"ok": True, "result": {"id": 44, "username": "demo_bot"}})
+        return FakeResponse(
+            {
+                "ok": True,
+                "result": [
+                    {"message": {"text": "private content", "chat": {"id": 101, "type": "private"}}},
+                    {"message": {"text": "group content", "chat": {"id": -202, "type": "group"}}},
+                    {"message": {"text": "repeat", "chat": {"id": 101, "type": "private"}}},
+                ],
+            }
+        )
+
+    client = server.TelegramBotClient(settings(tmp_path), urlopen=fake_urlopen)
+    assert client.get_me() == {"id": 44, "username": "demo_bot"}
+    assert client.recent_chats(20) == [
+        {"chat_id": "101", "type": "private"},
+        {"chat_id": "-202", "type": "group"},
+    ]
+    assert any(url.endswith("/getMe") for url in calls)
+    assert any("/getUpdates?limit=20" in url for url in calls)
+
+
 def test_client_retries_certificate_error_with_macos_system_trust(monkeypatch, tmp_path):
     calls = []
     trusted_context = object()
@@ -173,11 +201,52 @@ def test_settings_require_numeric_fixed_chat(monkeypatch, tmp_path):
         server.Settings.from_env()
 
 
-def test_only_one_external_write_tool_is_exposed():
+def test_settings_allow_token_only_for_read_only_discovery(monkeypatch, tmp_path):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "12345:test_token_not_real_xxxxx")
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setenv("TELEGRAM_ALERT_STATE_PATH", str(tmp_path / "state.sqlite3"))
+    assert server.Settings.from_env(require_chat_id=False).chat_id == ""
+
+
+def test_select_alert_chat_requires_discovered_id_and_saves_on_macos(monkeypatch):
+    class Discovery:
+        def recent_chats(self, limit):
+            assert limit == 100
+            return [{"chat_id": "101", "type": "private"}]
+
+    saved = {}
+    monkeypatch.setattr(server, "_discovery_client", lambda: Discovery())
+    monkeypatch.setattr(server, "_store_chat_id_on_macos", lambda value: saved.setdefault("chat_id", value))
+    result = server.select_alert_chat("101")
+    assert result["status"] == "saved"
+    assert saved == {"chat_id": "101"}
+    assert server.os.environ["TELEGRAM_CHAT_ID"] == "101"
+
+
+def test_select_alert_chat_refuses_arbitrary_destination(monkeypatch):
+    class Discovery:
+        def recent_chats(self, limit):
+            return [{"chat_id": "101", "type": "private"}]
+
+    monkeypatch.setattr(server, "_discovery_client", lambda: Discovery())
+    with pytest.raises(server.TelegramAlertError, match="not found in recent"):
+        server.select_alert_chat("202")
+
+
+def test_setup_tools_have_expected_write_boundaries():
     tools = {tool.name: tool for tool in server.mcp._tool_manager._tools.values()}
-    assert set(tools) == {"send_alert"}
-    annotations = tools["send_alert"].annotations
-    assert annotations.readOnlyHint is False
-    assert annotations.destructiveHint is False
-    assert annotations.idempotentHint is True
-    assert annotations.openWorldHint is True
+    assert set(tools) == {
+        "check_bot_connection",
+        "list_recent_telegram_chats",
+        "select_alert_chat",
+        "send_setup_test",
+        "send_alert",
+    }
+    for name in {"check_bot_connection", "list_recent_telegram_chats"}:
+        assert tools[name].annotations.readOnlyHint is True
+    for name in {"select_alert_chat", "send_setup_test", "send_alert"}:
+        annotations = tools[name].annotations
+        assert annotations.readOnlyHint is False
+        assert annotations.destructiveHint is False
+        assert annotations.idempotentHint is True
+        assert annotations.openWorldHint is True
