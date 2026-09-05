@@ -42,6 +42,12 @@ EXTERNAL_WRITE = ToolAnnotations(
     idempotentHint=True,
     openWorldHint=True,
 )
+READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
 
 mcp = FastMCP(
     "telegram-alert-mcp",
@@ -144,9 +150,15 @@ class Settings:
     protect_content: bool = True
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls, *, require_chat_id: bool = True) -> "Settings":
         bot_token = _require_bot_token(os.environ.get("TELEGRAM_BOT_TOKEN", ""))
-        chat_id = _require_chat_id(os.environ.get("TELEGRAM_CHAT_ID", ""))
+        raw_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        if require_chat_id and not raw_chat_id:
+            raise TelegramAlertError(
+                "TELEGRAM_CHAT_ID is not configured. Open the bot, press Start, "
+                "then use List recent Telegram chats and Select alert chat."
+            )
+        chat_id = _require_chat_id(raw_chat_id) if raw_chat_id else ""
         raw_timeout = os.environ.get(
             "TELEGRAM_ALERT_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)
         )
@@ -302,22 +314,7 @@ class TelegramBotClient:
         self.settings = settings
         self.urlopen = urlopen
 
-    def send_message(self, message: str) -> int:
-        payload = {
-            "chat_id": self.settings.chat_id,
-            "text": message,
-            "protect_content": self.settings.protect_content,
-            "link_preview_options": {"is_disabled": True},
-        }
-        request = urllib.request.Request(
-            f"{BOT_API_ROOT}/bot{self.settings.bot_token}/sendMessage",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "telegram-alert-mcp/0.2.1",
-            },
-            method="POST",
-        )
+    def _read_response(self, request: urllib.request.Request) -> bytes:
         try:
             try:
                 with self.urlopen(request, timeout=self.settings.timeout_seconds) as response:
@@ -336,6 +333,7 @@ class TelegramBotClient:
                     body = response.read(MAX_RESPONSE_BYTES + 1)
             if len(body) > MAX_RESPONSE_BYTES:
                 raise TelegramAlertError("Telegram returned an oversized response.")
+            return body
         except urllib.error.HTTPError as exc:
             retry_after: int | None = None
             try:
@@ -347,12 +345,76 @@ class TelegramBotClient:
                 pass
             suffix = f"; retry after {retry_after} seconds" if retry_after else ""
             raise TelegramAlertError(
-                f"Telegram Bot API rejected the alert (HTTP {exc.code}{suffix})."
+                f"Telegram Bot API rejected the request (HTTP {exc.code}{suffix})."
             ) from None
         except (urllib.error.URLError, TimeoutError, OSError):
-            raise TelegramAlertError(
-                "Could not reach Telegram Bot API; the workflow may retry this event."
-            ) from None
+            raise TelegramAlertError("Could not reach Telegram Bot API.") from None
+
+    def _get_json(self, method: str, query: str = "") -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"{BOT_API_ROOT}/bot{self.settings.bot_token}/{method}{query}",
+            headers={"User-Agent": "telegram-alert-mcp/0.2.1"},
+            method="GET",
+        )
+        body = self._read_response(request)
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise TelegramAlertError("Telegram returned an invalid response.") from None
+        if not isinstance(parsed, dict) or parsed.get("ok") is not True:
+            raise TelegramAlertError("Telegram Bot API did not accept the request.")
+        return parsed
+
+    def get_me(self) -> dict[str, Any]:
+        result = self._get_json("getMe").get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("id"), int):
+            raise TelegramAlertError("Telegram returned invalid bot details.")
+        return result
+
+    def recent_chats(self, limit: int) -> list[dict[str, Any]]:
+        result = self._get_json("getUpdates", f"?limit={limit}").get("result")
+        if not isinstance(result, list):
+            raise TelegramAlertError("Telegram returned invalid updates.")
+        chats: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for update in result:
+            if not isinstance(update, dict):
+                continue
+            chat: dict[str, Any] | None = None
+            for value in update.values():
+                if isinstance(value, dict) and isinstance(value.get("chat"), dict):
+                    chat = value["chat"]
+                    break
+            if chat is None:
+                continue
+            chat_id = chat.get("id")
+            chat_type = chat.get("type")
+            if not isinstance(chat_id, int) or chat_id in seen or not isinstance(chat_type, str):
+                continue
+            seen.add(chat_id)
+            chats.append({"chat_id": str(chat_id), "type": chat_type})
+        return chats
+
+    def send_message(self, message: str) -> int:
+        payload = {
+            "chat_id": self.settings.chat_id,
+            "text": message,
+            "protect_content": self.settings.protect_content,
+            "link_preview_options": {"is_disabled": True},
+        }
+        request = urllib.request.Request(
+            f"{BOT_API_ROOT}/bot{self.settings.bot_token}/sendMessage",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "telegram-alert-mcp/0.2.1",
+            },
+            method="POST",
+        )
+        try:
+            body = self._read_response(request)
+        except TelegramAlertError as exc:
+            raise TelegramAlertError(str(exc).replace("request", "alert")) from None
 
         try:
             parsed = json.loads(body.decode("utf-8"))
@@ -409,6 +471,124 @@ def _send_alert(
         "telegram_message_id": telegram_message_id,
         "delivered_at": delivered_at,
     }
+
+
+def _discovery_client() -> TelegramBotClient:
+    """Create a client that needs only the bot token, not a selected chat."""
+    return TelegramBotClient(Settings.from_env(require_chat_id=False))
+
+
+def _store_chat_id_on_macos(chat_id: str) -> None:
+    if sys.platform != "darwin":
+        raise TelegramAlertError(
+            "Automatic chat selection is available on macOS only. "
+            "Store TELEGRAM_CHAT_ID in your host's secret manager instead."
+        )
+    try:
+        subprocess.run(
+            [
+                "security",
+                "add-generic-password",
+                "-U",
+                "-s",
+                "telegram-alert-mcp",
+                "-a",
+                "chat-id",
+                "-w",
+                chat_id,
+            ],
+            check=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise TelegramAlertError("Could not save the selected chat in macOS Keychain.") from None
+
+
+@mcp.tool(
+    title="Check Telegram bot connection",
+    annotations=READ_ONLY,
+)
+def check_bot_connection() -> dict[str, Any]:
+    """Check the configured bot token without reading messages or sending anything."""
+    bot = _discovery_client().get_me()
+    return {
+        "status": "connected",
+        "bot_id": bot["id"],
+        "username": bot.get("username"),
+        "can_join_groups": bool(bot.get("can_join_groups")),
+    }
+
+
+@mcp.tool(
+    title="List recent Telegram chats",
+    annotations=READ_ONLY,
+)
+def list_recent_telegram_chats(limit: int = 20) -> dict[str, Any]:
+    """List chat IDs from recent bot updates without returning message text.
+
+    First ask the person configuring the bot to open it in Telegram and press
+    Start (or send /start). This tool is read-only and returns only chat IDs and
+    chat types, so a user can safely identify the intended recipient.
+    """
+    if not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise TelegramAlertError("limit must be an integer between 1 and 100.")
+    chats = _discovery_client().recent_chats(limit)
+    return {
+        "status": "found" if chats else "none_found",
+        "chats": chats,
+        "next_step": (
+            "Ask the user to send /start to the bot, then call this tool again."
+            if not chats
+            else "Ask the user which listed chat should receive alerts, then call Select alert chat."
+        ),
+    }
+
+
+@mcp.tool(
+    title="Select Telegram alert chat",
+    annotations=EXTERNAL_WRITE,
+)
+def select_alert_chat(chat_id: str) -> dict[str, Any]:
+    """Save one recently discovered chat as the fixed alert destination on macOS.
+
+    This changes local Keychain configuration. Call it only after the user has
+    explicitly confirmed one of the IDs returned by List recent Telegram chats.
+    An arbitrary chat ID is refused: it must occur in the bot's recent updates.
+    """
+    chat_id = _require_chat_id(chat_id)
+    candidates = _discovery_client().recent_chats(100)
+    selected = next((item for item in candidates if item["chat_id"] == chat_id), None)
+    if selected is None:
+        raise TelegramAlertError(
+            "The supplied chat_id was not found in recent bot updates. "
+            "Ask the user to open the bot and send /start, then list chats again."
+        )
+    _store_chat_id_on_macos(chat_id)
+    os.environ["TELEGRAM_CHAT_ID"] = chat_id
+    return {
+        "status": "saved",
+        "chat_id": chat_id,
+        "type": selected["type"],
+        "message": "This is now the fixed destination for Telegram Alerts.",
+    }
+
+
+@mcp.tool(
+    title="Send Telegram setup test",
+    annotations=EXTERNAL_WRITE,
+)
+def send_setup_test() -> dict[str, Any]:
+    """Send one safe setup test to the fixed configured chat.
+
+    This is an external message. Call it only after the user explicitly asks for
+    a test. Repeated calls use the same event ID and therefore do not create
+    duplicate setup messages.
+    """
+    return _send_alert(
+        "Telegram Alerts подключён успешно.",
+        "setup:telegram-alert-mcp:v1",
+    )
 
 
 @mcp.tool(

@@ -1,7 +1,7 @@
 {
   "name": "telegram-alert-mcp",
-  "version": "0.2.1+codex.20260902065310",
-  "description": "Send deduplicated workflow alerts to one preconfigured Telegram chat.",
+  "version": "0.2.1+codex.20260905130039",
+  "description": "Set up one fixed Telegram chat and send deduplicated workflow alerts.",
   "author": {
     "name": "Goldmanitu",
     "url": "https://github.com/Goldmanitu"
@@ -19,19 +19,21 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Telegram Alerts",
-    "shortDescription": "Send safe, deduplicated Telegram workflow alerts.",
-    "longDescription": "Send safe, deduplicated Telegram alerts to one preconfigured chat. It exposes one external-write MCP tool and a workflow skill for recurring automations.",
+    "shortDescription": "Set up and send safe, deduplicated Telegram alerts.",
+    "longDescription": "Discover a recently started Telegram chat, save one fixed recipient after confirmation, and send safe deduplicated alerts for recurring workflows.",
     "developerName": "Goldmanitu",
     "category": "Productivity",
     "capabilities": [
       "MCP",
       "Automation",
+      "Read",
       "Write"
     ],
     "websiteURL": "https://github.com/Goldmanitu/my-open-mcps/tree/main/plugins/telegram-alert-mcp",
     "privacyPolicyURL": "https://github.com/Goldmanitu/my-open-mcps/blob/main/plugins/telegram-alert-mcp/PRIVACY.md",
     "defaultPrompt": [
       "Explain how this Telegram alert workflow works.",
+      "Help me find and select the Chat ID for my Telegram bot.",
       "Prepare a safe test alert for my Telegram bot.",
       "Design a daily mail-to-Telegram monitoring workflow."
     ],
